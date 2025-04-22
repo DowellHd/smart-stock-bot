@@ -51,3 +51,26 @@ class DQNAgent:
         return np.argmax(q_vals[0])
 
     # (We’ll add replay() and train() methods next)
+    def replay(self, batch_size: int = 32):
+        """
+        Sample a random minibatch and train the Q‑network.
+        """
+        if len(self.memory) < batch_size:
+            return  # not enough samples yet
+
+        minibatch = random.sample(self.memory, batch_size)
+        for state, action, reward, next_state, done in minibatch:
+            # compute target Q-value
+            target = reward
+            if not done:
+                future_q = self.model.predict(next_state[np.newaxis, :], verbose=0)[0]
+                target += self.gamma * np.max(future_q)
+
+            # update the Q-network
+            target_f = self.model.predict(state[np.newaxis, :], verbose=0)
+            target_f[0][action] = target
+            self.model.fit(state[np.newaxis, :], target_f, epochs=1, verbose=0)
+
+        # decay epsilon
+        if self.epsilon > self.epsilon_min:
+            self.epsilon *= self.epsilon_decay
