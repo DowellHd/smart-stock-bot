@@ -1,10 +1,13 @@
 absl-py==2.2.2
 astunparse==1.6.3
 beautifulsoup4==4.13.4
+blinker==1.9.0
 certifi==2025.1.31
 cffi==1.17.1
 charset-normalizer==3.4.1
+click==8.1.8
 curl_cffi==0.10.0
+Flask==3.1.0
 flatbuffers==25.2.10
 frozendict==2.4.6
 gast==0.6.0
@@ -12,6 +15,8 @@ google-pasta==0.2.0
 grpcio==1.71.0
 h5py==3.13.0
 idna==3.10
+itsdangerous==2.2.0
+Jinja2==3.1.6
 joblib==1.4.2
 keras==3.9.2
 libclang==18.1.1
