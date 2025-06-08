@@ -1,0 +1,39 @@
+<body>
+    <h1>Smart Stock Bot Dashboard</h1>
+  
+    <!-- NEW: Prediction form -->
+    <section>
+      <h2>Quick Predict</h2>
+      <form id="predict-form">
+        <input type="text" id="ticker-input" placeholder="Ticker (e.g. AAPL)" required>
+        <button type="submit">Get Prediction</button>
+      </form>
+      <p id="predict-result"></p>
+    </section>
+  
+    <hr>
+  
+    <section>
+      <h2>Available Models</h2>
+      <ul id="model-list"></ul>
+      <button onclick="loadModels()">Refresh List</button>
+    </section>
+    …
+    <script>
+      // existing loadModels()…
+  
+      // NEW: handle prediction form
+      document.getElementById("predict-form").onsubmit = async e => {
+        e.preventDefault();
+        const ticker = document.getElementById("ticker-input").value;
+        const res = await fetch("/predict", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ticker})
+        });
+        const {prediction} = await res.json();
+        document.getElementById("predict-result").textContent =
+          `Model says: ${prediction.toUpperCase()}`;
+      };
+    </script>
+  </body>
