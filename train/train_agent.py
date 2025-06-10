@@ -1,4 +1,4 @@
-dimport numpy as np
+import numpy as np
 from app.model import TradingEnv
 from app.agent import DQNAgent
 
