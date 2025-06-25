@@ -1,61 +1,75 @@
-<section>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Smart Stock Bot</title>
+</head>
+<body>
+  <h1>Smart Stock Bot</h1>
+
+  <section>
     <h2>Quick Predict</h2>
-    <textarea
-      id="state-input"
-      rows="3"
-      cols="50"
-      placeholder="Paste JSON array of normalized prices"
-    ></textarea><br />
+    <select id="model-select"></select><br/>
+    <label for="state-input">State (JSON array):</label><br/>
+    <textarea id="state-input" rows="4" cols="50">[0.1, 0.2, 0.3]</textarea><br/>
     <button id="predict-btn">Get Prediction</button>
     <p id="predict-output"></p>
   </section>
-  
+
   <section>
     <h2>Available Models</h2>
-    <ul id="model-list">
-      <!-- populated by JS -->
-    </ul>
+    <ul id="model-list"></ul>
   </section>
-  
+
   <script>
-    // 1) Quick Predict handler
+    // 1) Populate the models dropdown
+    async function loadModels() {
+      const res = await fetch("/models");
+      const models = await res.json();
+      const sel = document.getElementById("model-select");
+      models.forEach(m => {
+        const opt = document.createElement("option");
+        opt.value = m;
+        opt.innerText = m;
+        sel.appendChild(opt);
+      });
+    }
+    loadModels();
+
+    // 2) Render the list of saved .h5 models
+    async function renderModelList() {
+      const res = await fetch("/models");
+      const models = await res.json();
+      const list = document.getElementById("model-list");
+      list.innerHTML = "";  // clear any existing items
+      models.forEach(m => {
+        const li = document.createElement("li");
+        li.innerText = m;
+        list.appendChild(li);
+      });
+    }
+    renderModelList();
+
+    // 3) Send prediction including chosen model
     document.getElementById("predict-btn").onclick = async () => {
       try {
-        const state = JSON.parse(
-          document.getElementById("state-input").value
-        );
+        const state = JSON.parse(document.getElementById("state-input").value);
+        const model = document.getElementById("model-select").value;
         const res = await fetch("/predict", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ state }),
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ state, model })
         });
         const { action } = await res.json();
         const labels = ["Hold", "Buy", "Sell"];
-        document.getElementById(
-          "predict-output"
-        ).textContent = `Model recommends: ${labels[action]}`;
+        document.getElementById("predict-output").textContent =
+          `Model ${model} recommends: ${labels[action]}`;
       } catch (err) {
-        document.getElementById(
-          "predict-output"
-        ).textContent = `Error: ${err.message}`;
+        document.getElementById("predict-output").textContent =
+          `Error: ${err.message}`;
       }
     };
-  
-    // 2) Load & display all .h5 model files
-    async function loadModels() {
-      try {
-        const res = await fetch("/models");
-        const models = await res.json();     // e.g. ["dqn_AAPL_final.h5", ...]
-        const ul = document.getElementById("model-list");
-        models.forEach((m) => {
-          const li = document.createElement("li");
-          li.textContent = m;
-          ul.appendChild(li);
-        });
-      } catch (err) {
-        console.error("Failed to load models:", err);
-      }
-    }
-  
-    window.addEventListener("DOMContentLoaded", loadModels);
   </script>
+</body>
+</html>
