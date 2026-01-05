@@ -1,0 +1,38 @@
+{
+  "name": "smart-stock-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Production-ready stock trading and portfolio management application",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:web\" \"npm run dev:api\"",
+    "dev:web": "cd apps/web && npm run dev",
+    "dev:api": "cd apps/api && ./scripts/dev.sh",
+    "build": "npm run build:web",
+    "build:web": "cd apps/web && npm run build",
+    "lint": "npm run lint:web && npm run lint:api",
+    "lint:web": "cd apps/web && npm run lint",
+    "lint:api": "cd apps/api && ruff check .",
+    "typecheck": "npm run typecheck:web && npm run typecheck:api",
+    "typecheck:web": "cd apps/web && npm run typecheck",
+    "typecheck:api": "cd apps/api && mypy .",
+    "test": "npm run test:web && npm run test:api",
+    "test:web": "cd apps/web && npm run test",
+    "test:api": "cd apps/api && pytest",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:build": "docker compose build",
+    "db:migrate": "cd apps/api && alembic upgrade head",
+    "db:seed": "cd apps/api && python scripts/seed.py"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
