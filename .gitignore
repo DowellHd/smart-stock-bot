@@ -64,3 +64,6 @@ Thumbs.db
 
 # Data
 data/
+
+# Nested git repositories
+smart-stock-bot/
