@@ -2,6 +2,7 @@
 Application configuration using Pydantic settings.
 Loads from environment variables with validation.
 """
+import json
 from typing import List
 
 from pydantic import Field, field_validator
@@ -88,18 +89,58 @@ class Settings(BaseSettings):
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod
     def parse_cors_origins(cls, v):
-        """Parse comma-separated CORS origins."""
+        """
+        Parse CORS origins from multiple formats:
+        - JSON array string: '["http://localhost:3000"]'
+        - Comma-separated: 'http://localhost:3000,http://localhost:3001'
+        - Already a list: ["http://localhost:3000"]
+        """
         if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",")]
-        return v
+            # Try parsing as JSON array first
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return [str(item).strip() for item in parsed if item]
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+            # Fall back to comma-separated parsing
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+
+        elif isinstance(v, list):
+            # Already a list (from default or programmatic setting)
+            return [str(item).strip() for item in v if item]
+
+        # Fallback for other types
+        return [str(v)] if v else []
 
     @field_validator("ALLOWED_HOSTS", mode="before")
     @classmethod
     def parse_allowed_hosts(cls, v):
-        """Parse comma-separated allowed hosts."""
+        """
+        Parse allowed hosts from multiple formats:
+        - JSON array string: '["localhost", "127.0.0.1"]'
+        - Comma-separated: 'localhost,127.0.0.1'
+        - Already a list: ["localhost", "127.0.0.1"]
+        """
         if isinstance(v, str):
-            return [host.strip() for host in v.split(",")]
-        return v
+            # Try parsing as JSON array first
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return [str(item).strip() for item in parsed if item]
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+            # Fall back to comma-separated parsing
+            return [host.strip() for host in v.split(",") if host.strip()]
+
+        elif isinstance(v, list):
+            # Already a list (from default or programmatic setting)
+            return [str(item).strip() for item in v if item]
+
+        # Fallback for other types
+        return [str(v)] if v else []
 
 
 # Global settings instance
