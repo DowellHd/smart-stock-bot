@@ -48,7 +48,7 @@ class User(Base):
 
     # Role and permissions
     role: Mapped[UserRole] = mapped_column(
-        SQLEnum(UserRole, name="user_role", create_type=True),
+        SQLEnum(UserRole, name="user_role", create_type=False, values_callable=lambda obj: [e.value for e in obj]),
         default=UserRole.USER,
         nullable=False,
     )
@@ -204,8 +204,8 @@ class AuditLog(Base):
     user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Additional metadata
-    metadata: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
-    # metadata can include action-specific details
+    action_metadata: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    # action_metadata can include action-specific details
 
     # Result
     success: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

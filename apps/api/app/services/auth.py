@@ -623,7 +623,7 @@ class AuthService:
             action=action,
             ip_address=client_info.get("ip_address"),
             user_agent=client_info.get("user_agent"),
-            metadata=metadata or {},
+            action_metadata=metadata or {},
             success=success,
             error_message=error_message,
         )
