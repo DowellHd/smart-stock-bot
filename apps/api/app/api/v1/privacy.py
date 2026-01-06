@@ -8,7 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.deps import get_client_info, get_current_user, require_admin
 from app.models.user import User
-from app.schemas.privacy import DataExportResponse, MessageResponse
+from app.schemas.privacy import (
+    DataExportResponse,
+    MessageResponse,
+    PreferencesResponse,
+    PreferencesUpdateRequest,
+)
 from app.services.privacy import PrivacyService
 
 logger = structlog.get_logger()
@@ -143,4 +148,120 @@ async def delete_user_account(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete account",
+        )
+
+
+@router.get("/preferences", response_model=PreferencesResponse)
+async def get_preferences(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get user privacy preferences and consent settings.
+
+    Returns current privacy settings including:
+    - Analytics consent
+    - Email notification preferences
+    - Trade confirmation settings
+    - Marketing email preferences
+    - UI theme preference
+
+    Defaults are returned for any unset preferences.
+    """
+    privacy_service = PrivacyService(db)
+
+    try:
+        preferences = await privacy_service.get_user_preferences(current_user.id)
+        return PreferencesResponse(**preferences)
+
+    except ValueError as e:
+        logger.error(
+            "get_preferences_failed",
+            user_id=str(current_user.id),
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(
+            "get_preferences_error",
+            user_id=str(current_user.id),
+            error=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve preferences",
+        )
+
+
+@router.put("/preferences", response_model=PreferencesResponse)
+async def update_preferences(
+    request: Request,
+    preferences_update: PreferencesUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Update user privacy preferences and consent settings.
+
+    **Partial Updates Supported:** You can update one or more preferences at a time.
+    Only the fields provided will be updated.
+
+    **Available Preferences:**
+    - `analytics_consent`: Consent for analytics and tracking (default: false)
+    - `email_notifications`: Enable email notifications (default: true)
+    - `trade_confirmations`: Email confirmations for trades (default: true)
+    - `marketing_emails`: Receive marketing emails (default: false)
+    - `theme`: UI theme preference ("light" or "dark", default: "light")
+
+    **Audit Trail:** All preference changes are logged for compliance.
+    """
+    privacy_service = PrivacyService(db)
+    client_info = get_client_info(request)
+
+    # Convert Pydantic model to dict, excluding unset fields
+    updates = preferences_update.model_dump(exclude_unset=True)
+
+    if not updates:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No preferences provided for update",
+        )
+
+    try:
+        updated_preferences = await privacy_service.update_user_preferences(
+            current_user.id, updates, client_info
+        )
+
+        logger.info(
+            "preferences_updated",
+            user_id=str(current_user.id),
+            updated_fields=list(updates.keys()),
+        )
+
+        return PreferencesResponse(**updated_preferences)
+
+    except ValueError as e:
+        logger.error(
+            "update_preferences_failed",
+            user_id=str(current_user.id),
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(
+            "update_preferences_error",
+            user_id=str(current_user.id),
+            error=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update preferences",
         )

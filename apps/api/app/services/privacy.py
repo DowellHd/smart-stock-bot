@@ -286,3 +286,107 @@ class PrivacyService:
             "user_account_hard_deleted",
             user_id=str(user_id),
         )
+
+    async def get_user_preferences(self, user_id: UUID) -> Dict[str, Any]:
+        """
+        Get user privacy preferences.
+
+        Args:
+            user_id: UUID of the user
+
+        Returns:
+            Dict containing user preferences
+
+        Raises:
+            ValueError: If user not found
+        """
+        result = await self.db.execute(
+            select(User).where(User.id == user_id, User.deleted_at.is_(None))
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise ValueError("User not found or has been deleted")
+
+        # Return preferences with defaults
+        default_preferences = {
+            "analytics_consent": False,
+            "email_notifications": True,
+            "trade_confirmations": True,
+            "marketing_emails": False,
+            "theme": "light",
+        }
+
+        # Merge user preferences with defaults
+        preferences = {**default_preferences, **user.preferences}
+
+        logger.info(
+            "user_preferences_retrieved",
+            user_id=str(user_id),
+        )
+
+        return preferences
+
+    async def update_user_preferences(
+        self, user_id: UUID, preferences: Dict[str, Any], client_info: dict
+    ) -> Dict[str, Any]:
+        """
+        Update user privacy preferences.
+
+        Args:
+            user_id: UUID of the user
+            preferences: Dictionary of preference updates
+            client_info: Client IP and user agent for audit log
+
+        Returns:
+            Dict containing updated preferences
+
+        Raises:
+            ValueError: If user not found
+        """
+        result = await self.db.execute(
+            select(User).where(User.id == user_id, User.deleted_at.is_(None))
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise ValueError("User not found or has been deleted")
+
+        # Get current preferences
+        current_preferences = user.preferences or {}
+
+        # Update with new values (merge)
+        updated_preferences = {**current_preferences, **preferences}
+
+        # Update user
+        user.preferences = updated_preferences
+        await self.db.commit()
+        await self.db.refresh(user)
+
+        # Create audit log
+        audit_log = AuditLog(
+            user_id=user_id,
+            action="preferences_updated",
+            ip_address=client_info.get("ip_address"),
+            user_agent=client_info.get("user_agent"),
+            action_metadata={"updated_fields": list(preferences.keys())},
+            success=True,
+        )
+        self.db.add(audit_log)
+        await self.db.commit()
+
+        logger.info(
+            "user_preferences_updated",
+            user_id=str(user_id),
+            updated_fields=list(preferences.keys()),
+        )
+
+        # Return preferences with defaults (same as get_user_preferences)
+        default_preferences = {
+            "analytics_consent": False,
+            "email_notifications": True,
+            "trade_confirmations": True,
+            "marketing_emails": False,
+            "theme": "light",
+        }
+        return {**default_preferences, **user.preferences}
