@@ -6,7 +6,7 @@ from typing import Any, Dict
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import AuditLog, MFABackupCode, Session, User
@@ -149,3 +149,140 @@ class PrivacyService:
         )
 
         return export_data
+
+    async def soft_delete_account(self, user_id: UUID, client_info: dict) -> None:
+        """
+        Soft delete user account for GDPR compliance (Right to Erasure).
+
+        Performs the following actions:
+        - Sets deleted_at timestamp on user account
+        - Revokes all active sessions
+        - Anonymizes audit logs (replaces PII with anonymized values)
+        - Creates audit log entry for deletion
+
+        The user record is preserved for audit/compliance purposes but
+        marked as deleted. The account cannot be recovered.
+
+        Args:
+            user_id: UUID of the user to delete
+            client_info: Client IP and user agent for audit log
+
+        Raises:
+            ValueError: If user not found
+        """
+        # Fetch user
+        result = await self.db.execute(
+            select(User).where(User.id == user_id, User.deleted_at.is_(None))
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise ValueError("User not found or already deleted")
+
+        # Mark user as deleted
+        user.deleted_at = datetime.utcnow()
+        user.email = f"deleted_{user_id}@deleted.local"  # Anonymize email
+        user.full_name = None  # Clear PII
+        user.phone_number = None  # Clear PII
+        user.email_verification_token = None
+        user.password_reset_token = None
+        user.mfa_secret = None
+        user.preferences = {}
+
+        # Revoke all sessions
+        await self.db.execute(
+            update(Session)
+            .where(Session.user_id == user_id, Session.is_revoked == False)  # noqa: E712
+            .values(is_revoked=True, revoked_at=datetime.utcnow())
+        )
+
+        # Delete MFA backup codes
+        await self.db.execute(
+            delete(MFABackupCode).where(MFABackupCode.user_id == user_id)
+        )
+
+        # Anonymize audit logs (preserve for compliance but remove PII)
+        await self.db.execute(
+            update(AuditLog)
+            .where(AuditLog.user_id == user_id)
+            .values(
+                ip_address="0.0.0.0",  # Anonymize IP
+                user_agent="anonymized",  # Anonymize user agent
+            )
+        )
+
+        # Create audit log for deletion
+        audit_log = AuditLog(
+            user_id=user_id,
+            action="account_deleted",
+            ip_address=client_info.get("ip_address"),
+            user_agent=client_info.get("user_agent"),
+            success=True,
+        )
+        self.db.add(audit_log)
+
+        await self.db.commit()
+
+        logger.info(
+            "user_account_soft_deleted",
+            user_id=str(user_id),
+        )
+
+    async def hard_delete_account(self, user_id: UUID, client_info: dict) -> None:
+        """
+        Permanently delete user account and all related data (ADMIN ONLY).
+
+        WARNING: This operation is irreversible and deletes ALL user data
+        including audit logs. Use only when legally required.
+
+        Deletes:
+        - All audit logs
+        - All sessions
+        - All MFA backup codes
+        - User account
+
+        Args:
+            user_id: UUID of the user to permanently delete
+            client_info: Client IP and user agent for audit log
+
+        Raises:
+            ValueError: If user not found
+        """
+        # Fetch user (including soft-deleted users)
+        result = await self.db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise ValueError("User not found")
+
+        # Create audit log BEFORE deletion (this will also be deleted)
+        audit_log = AuditLog(
+            user_id=user_id,
+            action="account_hard_deleted",
+            ip_address=client_info.get("ip_address"),
+            user_agent=client_info.get("user_agent"),
+            success=True,
+        )
+        self.db.add(audit_log)
+        await self.db.flush()  # Ensure it's written before cascading deletes
+
+        logger.warning(
+            "user_account_hard_delete_initiated",
+            user_id=str(user_id),
+            email=user.email,
+        )
+
+        # Delete all related data
+        await self.db.execute(delete(AuditLog).where(AuditLog.user_id == user_id))
+        await self.db.execute(delete(Session).where(Session.user_id == user_id))
+        await self.db.execute(delete(MFABackupCode).where(MFABackupCode.user_id == user_id))
+
+        # Delete user
+        await self.db.execute(delete(User).where(User.id == user_id))
+
+        await self.db.commit()
+
+        logger.warning(
+            "user_account_hard_deleted",
+            user_id=str(user_id),
+        )

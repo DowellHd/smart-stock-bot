@@ -21,3 +21,8 @@ class DataExportResponse(BaseModel):
     preferences: Dict[str, Any]
     sessions: List[Dict[str, Any]]
     audit_logs: List[Dict[str, Any]]
+
+
+class MessageResponse(BaseModel):
+    """Generic message response."""
+    message: str

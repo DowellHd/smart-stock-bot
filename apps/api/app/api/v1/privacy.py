@@ -6,9 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.deps import get_client_info, get_current_user
+from app.core.deps import get_client_info, get_current_user, require_admin
 from app.models.user import User
-from app.schemas.privacy import DataExportResponse
+from app.schemas.privacy import DataExportResponse, MessageResponse
 from app.services.privacy import PrivacyService
 
 logger = structlog.get_logger()
@@ -80,4 +80,67 @@ async def export_user_data(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to export user data",
+        )
+
+
+@router.delete("/account", response_model=MessageResponse)
+async def delete_user_account(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Delete user account for GDPR compliance (Right to Erasure).
+
+    Performs a **soft delete** which:
+    - Marks the account as deleted (cannot be recovered)
+    - Revokes all active sessions (logs user out everywhere)
+    - Anonymizes personally identifiable information (PII)
+    - Preserves audit trail for compliance purposes
+
+    **Important:**
+    - This action is **irreversible**
+    - You will be immediately logged out
+    - Your data will be anonymized but preserved for audit/legal compliance
+    - For complete data removal, contact support (admin required)
+
+    **Rate Limited:** This endpoint is rate-limited to prevent abuse.
+    """
+    privacy_service = PrivacyService(db)
+    client_info = get_client_info(request)
+
+    try:
+        await privacy_service.soft_delete_account(current_user.id, client_info)
+
+        logger.info(
+            "account_deletion_requested",
+            user_id=str(current_user.id),
+            email=current_user.email,
+            ip_address=client_info.get("ip_address"),
+        )
+
+        return MessageResponse(
+            message="Account successfully deleted. All sessions have been revoked."
+        )
+
+    except ValueError as e:
+        logger.error(
+            "account_deletion_failed",
+            user_id=str(current_user.id),
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(
+            "account_deletion_error",
+            user_id=str(current_user.id),
+            error=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete account",
         )
