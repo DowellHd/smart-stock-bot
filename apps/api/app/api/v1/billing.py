@@ -6,12 +6,13 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.redis import get_redis
-from app.models.billing import SubscriptionPlan
+from app.models.billing import SubscriptionPlan, UserSubscription
 from app.models.user import User
 from app.schemas.billing import (
     BillingPortalResponse,
@@ -94,9 +95,12 @@ async def get_subscription(
                 status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
             )
 
-        # Get subscription (may be None for free users)
+        # Get subscription (may be None for free users) - eagerly load plan and features
         subscription_result = await db.execute(
-            select(User.subscriptions).where(User.id == current_user.id).limit(1)
+            select(UserSubscription)
+            .options(selectinload(UserSubscription.plan).selectinload(SubscriptionPlan.features))
+            .where(UserSubscription.user_id == current_user.id)
+            .limit(1)
         )
         subscription = subscription_result.scalar_one_or_none()
 

@@ -19,7 +19,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import ENUM as PGENUM, JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -122,7 +122,7 @@ class UserSubscription(Base):
         String(255), nullable=True, unique=True, index=True
     )
     status: Mapped[SubscriptionStatus] = mapped_column(
-        SQLEnum(SubscriptionStatus), nullable=False, index=True
+        PGENUM('active', 'canceled', 'past_due', 'trialing', 'paused', name='subscription_status', create_type=False), nullable=False, index=True
     )
     current_period_start: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
