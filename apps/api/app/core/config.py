@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     SESSION_COOKIE_SAMESITE: str = Field(default="strict")
     CSRF_ENABLED: bool = Field(default=True)
 
+    # Admin
+    ADMIN_EMAILS: List[str] = Field(default=[])
+
     # Feature Flags
     ENABLE_MFA: bool = Field(default=True)
     ENABLE_EMAIL_VERIFICATION: bool = Field(default=True)
@@ -141,6 +144,34 @@ class Settings(BaseSettings):
 
         # Fallback for other types
         return [str(v)] if v else []
+
+    @field_validator("ADMIN_EMAILS", mode="before")
+    @classmethod
+    def parse_admin_emails(cls, v):
+        """
+        Parse admin emails from multiple formats:
+        - JSON array string: '["admin@example.com"]'
+        - Comma-separated: 'admin1@example.com,admin2@example.com'
+        - Already a list: ["admin@example.com"]
+        """
+        if isinstance(v, str):
+            # Try parsing as JSON array first
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return [str(item).strip().lower() for item in parsed if item]
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+            # Fall back to comma-separated parsing
+            return [email.strip().lower() for email in v.split(",") if email.strip()]
+
+        elif isinstance(v, list):
+            # Already a list (from default or programmatic setting)
+            return [str(item).strip().lower() for item in v if item]
+
+        # Fallback for other types
+        return []
 
 
 # Global settings instance

@@ -140,11 +140,12 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 # Import and include routers
-from app.api.v1 import auth, billing, privacy
+from app.api.v1 import auth, billing, privacy, trading
 
 app.include_router(auth.router, prefix=f"{settings.API_PREFIX}/auth", tags=["Auth"])
 app.include_router(privacy.router, prefix=f"{settings.API_PREFIX}/privacy", tags=["Privacy"])
 app.include_router(billing.router, prefix=f"{settings.API_PREFIX}/billing", tags=["Billing"])
+app.include_router(trading.router, prefix=f"{settings.API_PREFIX}/trading", tags=["Trading"])
 
 
 # Root endpoint

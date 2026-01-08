@@ -100,7 +100,66 @@ async def seed_plans():
             print(f"  ✓ Created Free plan with {len(free_features)} features")
 
             # ================================================================
-            # Pro Plan ($49/mo)
+            # Starter Plan ($19.99/mo)
+            # ================================================================
+            starter_plan = SubscriptionPlan(
+                name="starter",
+                display_name="Starter Plan",
+                description="Real-time signals and basic trading features for beginners",
+                price_monthly=Decimal("19.99"),
+                price_yearly=Decimal("199.99"),  # ~17% discount for annual
+                stripe_price_id_monthly="price_STARTER_MONTHLY",  # TODO: Replace with real Stripe price ID
+                stripe_price_id_yearly="price_STARTER_YEARLY",  # TODO: Replace with real Stripe price ID
+                is_active=True,
+            )
+            db.add(starter_plan)
+            await db.flush()  # Get the ID
+
+            starter_features = [
+                PlanFeature(
+                    plan_id=starter_plan.id,
+                    feature_key="live_trading_enabled",
+                    feature_value="false",
+                ),
+                PlanFeature(
+                    plan_id=starter_plan.id,
+                    feature_key="signal_delay_minutes",
+                    feature_value="0",  # Real-time signals
+                ),
+                PlanFeature(
+                    plan_id=starter_plan.id,
+                    feature_key="max_watchlist_symbols",
+                    feature_value="20",
+                ),
+                PlanFeature(
+                    plan_id=starter_plan.id,
+                    feature_key="daily_api_requests",
+                    feature_value="1000",
+                ),
+                PlanFeature(
+                    plan_id=starter_plan.id,
+                    feature_key="realtime_alerts_enabled",
+                    feature_value="true",
+                ),
+                PlanFeature(
+                    plan_id=starter_plan.id,
+                    feature_key="backtest_enabled",
+                    feature_value="true",
+                ),
+                PlanFeature(
+                    plan_id=starter_plan.id,
+                    feature_key="paper_trading_enabled",
+                    feature_value="true",
+                ),
+            ]
+            for feature in starter_features:
+                db.add(feature)
+
+            logger.info("starter_plan_created", features_count=len(starter_features))
+            print(f"  ✓ Created Starter plan with {len(starter_features)} features")
+
+            # ================================================================
+            # Pro Plan ($49.99/mo)
             # ================================================================
             # NOTE: Replace 'price_XXXXX' with actual Stripe price IDs from dashboard
             pro_plan = SubscriptionPlan(
@@ -172,15 +231,17 @@ async def seed_plans():
             # Commit all changes
             await db.commit()
 
-            logger.info("plans_seeded_successfully", total_plans=2)
-            print("\n✓ Successfully seeded 2 subscription plans")
+            logger.info("plans_seeded_successfully", total_plans=3)
+            print("\n✓ Successfully seeded 3 subscription plans")
             print("\nPlans created:")
-            print("  • Free Plan   ($0/mo) - Paper trading, delayed signals, basic features")
-            print("  • Pro Plan    ($49.99/mo or $479.99/yr) - Live trading, real-time signals, premium features")
-            print("\nIMPORTANT: Update Stripe price IDs in the database for Pro plan:")
+            print("  • Free Plan    ($0/mo) - Paper trading, delayed signals, basic features")
+            print("  • Starter Plan ($19.99/mo or $199.99/yr) - Real-time signals, backtesting, paper trading")
+            print("  • Pro Plan     ($49.99/mo or $479.99/yr) - Live trading, real-time signals, premium features")
+            print("\nIMPORTANT: Update Stripe price IDs in the database for Starter and Pro plans:")
             print("  1. Create products in Stripe Dashboard")
             print("  2. Get price IDs for monthly and yearly billing")
-            print("  3. Run: UPDATE subscription_plans SET stripe_price_id_monthly='price_xxx' WHERE name='pro';")
+            print("  3. Update Starter: UPDATE subscription_plans SET stripe_price_id_monthly='price_xxx', stripe_price_id_yearly='price_yyy' WHERE name='starter';")
+            print("  4. Update Pro: UPDATE subscription_plans SET stripe_price_id_monthly='price_xxx', stripe_price_id_yearly='price_yyy' WHERE name='pro';")
 
         except Exception as e:
             logger.error("seed_plans_failed", error=str(e), exc_info=True)
