@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import structlog
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.billing import PlanFeature, SubscriptionPlan
 
@@ -49,7 +50,7 @@ async def seed_plans():
                 description="Perfect for getting started with paper trading and delayed signals",
                 price_monthly=Decimal("0.00"),
                 price_yearly=Decimal("0.00"),
-                stripe_price_id_monthly=None,  # No Stripe price for free plan
+                stripe_price_id_monthly=settings.STRIPE_PRICE_FREE_MONTHLY or None,
                 stripe_price_id_yearly=None,
                 is_active=True,
             )
@@ -107,9 +108,9 @@ async def seed_plans():
                 display_name="Starter Plan",
                 description="Real-time signals and basic trading features for beginners",
                 price_monthly=Decimal("19.99"),
-                price_yearly=Decimal("199.99"),  # ~17% discount for annual
-                stripe_price_id_monthly="price_STARTER_MONTHLY",  # TODO: Replace with real Stripe price ID
-                stripe_price_id_yearly="price_STARTER_YEARLY",  # TODO: Replace with real Stripe price ID
+                price_yearly=Decimal("199.99"),
+                stripe_price_id_monthly=settings.STRIPE_PRICE_STARTER_MONTHLY,
+                stripe_price_id_yearly=settings.STRIPE_PRICE_STARTER_YEARLY,
                 is_active=True,
             )
             db.add(starter_plan)
@@ -161,15 +162,14 @@ async def seed_plans():
             # ================================================================
             # Pro Plan ($49.99/mo)
             # ================================================================
-            # NOTE: Replace 'price_XXXXX' with actual Stripe price IDs from dashboard
             pro_plan = SubscriptionPlan(
                 name="pro",
                 display_name="Pro Plan",
                 description="Full access with real-time signals, live trading, and premium features",
                 price_monthly=Decimal("49.99"),
-                price_yearly=Decimal("479.99"),  # ~20% discount for annual
-                stripe_price_id_monthly="price_XXXXX",  # TODO: Replace with real Stripe price ID
-                stripe_price_id_yearly="price_YYYYY",  # TODO: Replace with real Stripe price ID
+                price_yearly=Decimal("479.99"),
+                stripe_price_id_monthly=settings.STRIPE_PRICE_PRO_MONTHLY,
+                stripe_price_id_yearly=settings.STRIPE_PRICE_PRO_YEARLY,
                 is_active=True,
             )
             db.add(pro_plan)
@@ -232,16 +232,16 @@ async def seed_plans():
             await db.commit()
 
             logger.info("plans_seeded_successfully", total_plans=3)
-            print("\n✓ Successfully seeded 3 subscription plans")
+            print("\n✓ Successfully seeded 3 subscription plans with production Stripe price IDs")
             print("\nPlans created:")
-            print("  • Free Plan    ($0/mo) - Paper trading, delayed signals, basic features")
-            print("  • Starter Plan ($19.99/mo or $199.99/yr) - Real-time signals, backtesting, paper trading")
-            print("  • Pro Plan     ($49.99/mo or $479.99/yr) - Live trading, real-time signals, premium features")
-            print("\nIMPORTANT: Update Stripe price IDs in the database for Starter and Pro plans:")
-            print("  1. Create products in Stripe Dashboard")
-            print("  2. Get price IDs for monthly and yearly billing")
-            print("  3. Update Starter: UPDATE subscription_plans SET stripe_price_id_monthly='price_xxx', stripe_price_id_yearly='price_yyy' WHERE name='starter';")
-            print("  4. Update Pro: UPDATE subscription_plans SET stripe_price_id_monthly='price_xxx', stripe_price_id_yearly='price_yyy' WHERE name='pro';")
+            print(f"  • Free Plan    ($0/mo) - Price ID: {free_plan.stripe_price_id_monthly or 'N/A'}")
+            print(f"  • Starter Plan ($19.99/mo or $199.99/yr)")
+            print(f"    - Monthly: {starter_plan.stripe_price_id_monthly}")
+            print(f"    - Yearly:  {starter_plan.stripe_price_id_yearly}")
+            print(f"  • Pro Plan     ($49.99/mo or $479.99/yr)")
+            print(f"    - Monthly: {pro_plan.stripe_price_id_monthly}")
+            print(f"    - Yearly:  {pro_plan.stripe_price_id_yearly}")
+            print("\nStripe integration ready for production use.")
 
         except Exception as e:
             logger.error("seed_plans_failed", error=str(e), exc_info=True)
