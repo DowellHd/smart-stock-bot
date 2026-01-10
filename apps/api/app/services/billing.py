@@ -188,7 +188,7 @@ class BillingService:
 
     async def handle_webhook(self, event: stripe.Event, redis) -> None:
         """
-        Handle Stripe webhook events.
+        Handle Stripe webhook events with idempotency.
 
         Args:
             event: Stripe event object
@@ -198,8 +198,21 @@ class BillingService:
             ValueError: If event handling fails
         """
         event_type = event["type"]
+        event_id = event["id"]
 
-        logger.info("stripe_webhook_received", event_type=event_type, event_id=event["id"])
+        # Idempotency check - prevent duplicate processing
+        idempotency_key = f"webhook_processed:{event_id}"
+        already_processed = await redis.get(idempotency_key)
+
+        if already_processed:
+            logger.info(
+                "webhook_already_processed_skipping",
+                event_type=event_type,
+                event_id=event_id,
+            )
+            return
+
+        logger.info("stripe_webhook_received", event_type=event_type, event_id=event_id)
 
         try:
             if event_type == "checkout.session.completed":
@@ -214,13 +227,29 @@ class BillingService:
             elif event_type == "invoice.payment_failed":
                 await self._handle_payment_failed(event["data"]["object"], redis)
 
+            elif event_type == "invoice.payment_succeeded":
+                await self._handle_payment_succeeded(event["data"]["object"], redis)
+
+            elif event_type == "customer.updated":
+                await self._handle_customer_updated(event["data"]["object"], redis)
+
             else:
                 logger.info("stripe_webhook_ignored", event_type=event_type)
+
+            # Mark event as processed (24-hour TTL)
+            await redis.setex(idempotency_key, 86400, "1")
+
+            logger.info(
+                "stripe_webhook_processed_successfully",
+                event_type=event_type,
+                event_id=event_id,
+            )
 
         except Exception as e:
             logger.error(
                 "stripe_webhook_handling_failed",
                 event_type=event_type,
+                event_id=event_id,
                 error=str(e),
                 exc_info=True,
             )
@@ -388,10 +417,91 @@ class BillingService:
         # Invalidate entitlements cache
         await invalidate_entitlements_cache(user_subscription.user_id, redis)
 
+        # Create audit log
+        audit_log = AuditLog(
+            user_id=user_subscription.user_id,
+            action="payment_failed",
+            metadata={
+                "invoice_id": invoice["id"],
+                "subscription_id": subscription_id,
+                "amount_due": invoice.get("amount_due"),
+            },
+            success=False,
+        )
+        self.db.add(audit_log)
+        await self.db.commit()
+
         logger.warning(
             "subscription_payment_failed",
             user_id=str(user_subscription.user_id),
             invoice_id=invoice["id"],
+        )
+
+    async def _handle_payment_succeeded(self, invoice: Dict[str, Any], redis) -> None:
+        """Handle invoice.payment_succeeded event."""
+        subscription_id = invoice.get("subscription")
+
+        if not subscription_id:
+            return
+
+        result = await self.db.execute(
+            select(UserSubscription)
+            .where(UserSubscription.stripe_subscription_id == subscription_id)
+            .limit(1)
+        )
+        user_subscription = result.scalar_one_or_none()
+
+        if not user_subscription:
+            return
+
+        # Ensure subscription is active if payment succeeded
+        if user_subscription.status != SubscriptionStatus.ACTIVE:
+            user_subscription.status = SubscriptionStatus.ACTIVE
+            await self.db.commit()
+
+            # Invalidate entitlements cache
+            await invalidate_entitlements_cache(user_subscription.user_id, redis)
+
+        # Create audit log
+        audit_log = AuditLog(
+            user_id=user_subscription.user_id,
+            action="payment_succeeded",
+            metadata={
+                "invoice_id": invoice["id"],
+                "subscription_id": subscription_id,
+                "amount_paid": invoice.get("amount_paid"),
+            },
+            success=True,
+        )
+        self.db.add(audit_log)
+        await self.db.commit()
+
+        logger.info(
+            "subscription_payment_succeeded",
+            user_id=str(user_subscription.user_id),
+            invoice_id=invoice["id"],
+        )
+
+    async def _handle_customer_updated(self, customer: Dict[str, Any], redis) -> None:
+        """Handle customer.updated event."""
+        customer_id = customer["id"]
+
+        result = await self.db.execute(
+            select(UserSubscription)
+            .where(UserSubscription.stripe_customer_id == customer_id)
+            .limit(1)
+        )
+        user_subscription = result.scalar_one_or_none()
+
+        if not user_subscription:
+            logger.info("customer_updated_no_subscription_found", customer_id=customer_id)
+            return
+
+        # Update customer metadata if needed
+        logger.info(
+            "customer_updated",
+            user_id=str(user_subscription.user_id),
+            customer_id=customer_id,
         )
 
     async def cancel_subscription(self, user_id: UUID, redis) -> UserSubscription:
@@ -466,7 +576,7 @@ class BillingService:
         try:
             portal_session = stripe.billing_portal.Session.create(
                 customer=user_subscription.stripe_customer_id,
-                return_url=f"{settings.ALLOWED_ORIGINS[0]}/dashboard/billing",
+                return_url="https://smartstockbot.app/dashboard/billing",
             )
 
             logger.info(
