@@ -17,8 +17,8 @@ from app.models.user import AuditLog, User
 
 logger = structlog.get_logger()
 
-# Initialize Stripe
-stripe.api_key = settings.STRIPE_API_KEY
+# Initialize Stripe with production secret key
+stripe.api_key = settings.STRIPE_SECRET_KEY
 
 
 class BillingService:
@@ -149,12 +149,21 @@ class BillingService:
                 payment_method_types=["card"],
                 line_items=[{"price": price_id, "quantity": 1}],
                 mode="subscription",
-                success_url=success_url,
+                success_url=success_url + "?session_id={CHECKOUT_SESSION_ID}",
                 cancel_url=cancel_url,
                 metadata={
                     "user_id": str(user_id),
                     "plan_id": str(plan.id),
                     "plan_name": plan_name,
+                    "billing_cycle": billing_cycle,
+                },
+                allow_promotion_codes=True,
+                billing_address_collection="required",
+                subscription_data={
+                    "metadata": {
+                        "user_id": str(user_id),
+                        "plan_name": plan_name,
+                    }
                 },
             )
 
