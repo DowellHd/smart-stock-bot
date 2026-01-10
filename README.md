@@ -127,6 +127,40 @@ smart-stock-bot/
    - API Docs: http://localhost:8000/api/v1/docs
    - API Health: http://localhost:8000/healthz
 
+### Demo Mode (No Backend Required)
+
+Want to try the platform without setting up the backend? Enable demo mode to run the frontend with realistic mock data:
+
+```bash
+# Navigate to frontend
+cd apps/web
+
+# Create .env.local with demo mode enabled
+echo "NEXT_PUBLIC_DEMO_MODE=true" > .env.local
+
+# Install dependencies and start
+npm install
+npm run dev
+```
+
+Visit http://localhost:3000 - the app works fully with zero backend dependencies!
+
+**Demo Mode Features:**
+- ✅ Realistic mock portfolio with positions and P&L
+- ✅ Trading signals with SMA crossover strategy
+- ✅ Historical charts with OHLCV data
+- ✅ Order management and paper trading
+- ✅ Subscription plans and billing UI
+- ✅ All UI components fully functional
+
+Perfect for:
+- 📊 Portfolio showcases and presentations
+- 🚀 Quick demos to investors or users
+- 💻 Frontend development without backend
+- 🧪 Testing UI/UX changes
+
+See [Demo Mode Documentation](./apps/web/docs/DEMO_MODE.md) for details.
+
 ## Security Model
 
 ### Authentication & Authorization
