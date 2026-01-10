@@ -158,9 +158,9 @@ async def create_checkout_session(
     billing_service = BillingService(db)
 
     try:
-        # Default URLs if not provided
-        success_url = request.success_url or f"{settings.ALLOWED_ORIGINS[0]}/dashboard?checkout=success"
-        cancel_url = request.cancel_url or f"{settings.ALLOWED_ORIGINS[0]}/pricing?checkout=canceled"
+        # Production URLs
+        success_url = request.success_url or "https://smartstockbot.app/billing/success"
+        cancel_url = request.cancel_url or "https://smartstockbot.app/billing/canceled"
 
         result = await billing_service.create_checkout_session(
             user_id=current_user.id,
