@@ -47,15 +47,18 @@ async def list_plans(db: AsyncSession = Depends(get_db)):
     try:
         result = await db.execute(
             select(SubscriptionPlan)
+            .options(selectinload(SubscriptionPlan.features))
             .where(SubscriptionPlan.is_active == True)  # noqa: E712
             .order_by(SubscriptionPlan.price_monthly)
         )
         plans = result.scalars().all()
 
+        logger.info("plans_listed", count=len(plans))
+
         return SubscriptionPlanListResponse(plans=plans)
 
     except Exception as e:
-        logger.error("failed_to_list_plans", error=str(e), exc_info=True)
+        logger.error("failed_to_list_plans", error=str(e), error_type=type(e).__name__, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve subscription plans",
