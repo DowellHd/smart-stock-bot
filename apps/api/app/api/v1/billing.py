@@ -82,8 +82,6 @@ async def get_subscription(
     - Trial information if applicable
     """
     try:
-        billing_service = BillingService(db)
-
         # Query user subscription
         result = await db.execute(
             select(User).where(User.id == current_user.id).limit(1)
@@ -91,6 +89,7 @@ async def get_subscription(
         user = result.scalar_one_or_none()
 
         if not user:
+            logger.error("user_not_found_in_subscription_query", user_id=str(current_user.id))
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
             )
@@ -104,6 +103,13 @@ async def get_subscription(
         )
         subscription = subscription_result.scalar_one_or_none()
 
+        logger.info(
+            "subscription_retrieved",
+            user_id=str(current_user.id),
+            has_subscription=subscription is not None,
+            plan=subscription.plan.name if subscription else "free",
+        )
+
         return SubscriptionResponse(
             subscription=subscription,
             message="No active subscription" if not subscription else None,
@@ -116,6 +122,7 @@ async def get_subscription(
             "failed_to_get_subscription",
             user_id=str(current_user.id),
             error=str(e),
+            error_type=type(e).__name__,
             exc_info=True,
         )
         raise HTTPException(
@@ -157,6 +164,13 @@ async def create_checkout_session(
     """
     billing_service = BillingService(db)
 
+    logger.info(
+        "checkout_session_requested",
+        user_id=str(current_user.id),
+        plan=request.plan_name,
+        billing_cycle=request.billing_cycle,
+    )
+
     try:
         # Production URLs
         success_url = request.success_url or "https://smartstockbot.app/billing/success"
@@ -171,18 +185,21 @@ async def create_checkout_session(
         )
 
         logger.info(
-            "checkout_session_created",
+            "checkout_session_created_successfully",
             user_id=str(current_user.id),
             plan=request.plan_name,
             billing_cycle=request.billing_cycle,
+            session_id=result.get("session_id"),
         )
 
         return CheckoutResponse(**result)
 
     except ValueError as e:
-        logger.error(
-            "checkout_session_failed",
+        logger.warning(
+            "checkout_session_validation_failed",
             user_id=str(current_user.id),
+            plan=request.plan_name,
+            billing_cycle=request.billing_cycle,
             error=str(e),
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -190,7 +207,10 @@ async def create_checkout_session(
         logger.error(
             "checkout_session_error",
             user_id=str(current_user.id),
+            plan=request.plan_name,
+            billing_cycle=request.billing_cycle,
             error=str(e),
+            error_type=type(e).__name__,
             exc_info=True,
         )
         raise HTTPException(
@@ -219,10 +239,16 @@ async def cancel_subscription(
     """
     billing_service = BillingService(db)
 
+    logger.info("subscription_cancel_requested", user_id=str(current_user.id))
+
     try:
         subscription = await billing_service.cancel_subscription(current_user.id, redis)
 
-        logger.info("subscription_cancel_requested", user_id=str(current_user.id))
+        logger.info(
+            "subscription_canceled_successfully",
+            user_id=str(current_user.id),
+            period_end=subscription.current_period_end.isoformat() if subscription.current_period_end else None,
+        )
 
         return CancelSubscriptionResponse(
             message="Subscription will be canceled at the end of the current billing period",
@@ -230,8 +256,8 @@ async def cancel_subscription(
         )
 
     except ValueError as e:
-        logger.error(
-            "subscription_cancel_failed",
+        logger.warning(
+            "subscription_cancel_validation_failed",
             user_id=str(current_user.id),
             error=str(e),
         )
@@ -241,6 +267,7 @@ async def cancel_subscription(
             "subscription_cancel_error",
             user_id=str(current_user.id),
             error=str(e),
+            error_type=type(e).__name__,
             exc_info=True,
         )
         raise HTTPException(
@@ -268,16 +295,21 @@ async def get_customer_portal(
     """
     billing_service = BillingService(db)
 
+    logger.info("billing_portal_requested", user_id=str(current_user.id))
+
     try:
         portal_url = await billing_service.get_billing_portal_url(current_user.id)
 
-        logger.info("billing_portal_requested", user_id=str(current_user.id))
+        logger.info(
+            "billing_portal_created_successfully",
+            user_id=str(current_user.id),
+        )
 
         return BillingPortalResponse(portal_url=portal_url)
 
     except ValueError as e:
-        logger.error(
-            "billing_portal_failed",
+        logger.warning(
+            "billing_portal_validation_failed",
             user_id=str(current_user.id),
             error=str(e),
         )
@@ -287,6 +319,7 @@ async def get_customer_portal(
             "billing_portal_error",
             user_id=str(current_user.id),
             error=str(e),
+            error_type=type(e).__name__,
             exc_info=True,
         )
         raise HTTPException(
@@ -317,6 +350,8 @@ async def stripe_webhook(
     - `customer.subscription.updated` - Status/period changes
     - `customer.subscription.deleted` - Subscription cancellation
     - `invoice.payment_failed` - Payment failures
+    - `invoice.payment_succeeded` - Successful renewals
+    - `customer.updated` - Customer information changes
 
     **Security:** Webhook signature verification using STRIPE_WEBHOOK_SECRET.
     """
@@ -324,7 +359,7 @@ async def stripe_webhook(
     sig_header = request.headers.get("stripe-signature")
 
     if not sig_header:
-        logger.warning("stripe_webhook_missing_signature")
+        logger.warning("stripe_webhook_missing_signature", ip=request.client.host if request.client else "unknown")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Missing Stripe signature header",
@@ -336,26 +371,54 @@ async def stripe_webhook(
             payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
         )
 
-        logger.info("stripe_webhook_received", event_type=event["type"], event_id=event["id"])
+        event_type = event["type"]
+        event_id = event["id"]
+
+        logger.info(
+            "stripe_webhook_verified",
+            event_type=event_type,
+            event_id=event_id,
+            ip=request.client.host if request.client else "unknown",
+        )
 
         # Handle event
         billing_service = BillingService(db)
         await billing_service.handle_webhook(event, redis)
 
-        return {"status": "success"}
+        logger.info(
+            "stripe_webhook_handled_successfully",
+            event_type=event_type,
+            event_id=event_id,
+        )
+
+        return {"status": "success", "event_id": event_id}
 
     except ValueError as e:
-        logger.error("stripe_webhook_invalid_payload", error=str(e))
+        logger.error(
+            "stripe_webhook_invalid_payload",
+            error=str(e),
+            ip=request.client.host if request.client else "unknown",
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid payload")
 
     except stripe.SignatureVerificationError as e:
-        logger.error("stripe_webhook_invalid_signature", error=str(e))
+        logger.error(
+            "stripe_webhook_invalid_signature",
+            error=str(e),
+            ip=request.client.host if request.client else "unknown",
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid signature"
         )
 
     except Exception as e:
-        logger.error("stripe_webhook_processing_failed", error=str(e), exc_info=True)
+        logger.error(
+            "stripe_webhook_processing_failed",
+            error=str(e),
+            error_type=type(e).__name__,
+            ip=request.client.host if request.client else "unknown",
+            exc_info=True,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to process webhook",
