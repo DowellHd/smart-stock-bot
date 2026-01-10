@@ -65,8 +65,16 @@ class Settings(BaseSettings):
     PLAID_ENV: str = Field(default="sandbox")
 
     # Stripe
-    STRIPE_API_KEY: str = Field(default="")
+    STRIPE_SECRET_KEY: str = Field(default="")
+    STRIPE_PUBLISHABLE_KEY: str = Field(default="")
     STRIPE_WEBHOOK_SECRET: str = Field(default="")
+
+    # Stripe Price IDs
+    STRIPE_PRICE_FREE_MONTHLY: str = Field(default="")
+    STRIPE_PRICE_STARTER_MONTHLY: str = Field(default="")
+    STRIPE_PRICE_STARTER_YEARLY: str = Field(default="")
+    STRIPE_PRICE_PRO_MONTHLY: str = Field(default="")
+    STRIPE_PRICE_PRO_YEARLY: str = Field(default="")
 
     # Rate Limiting
     RATE_LIMIT_ENABLED: bool = Field(default=True)
